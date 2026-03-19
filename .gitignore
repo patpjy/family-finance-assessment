@@ -9,5 +9,6 @@ tsconfig.tsbuildinfo
 
 .env
 .env.*
+!.env.local
 !.env.example
 !.env.md
