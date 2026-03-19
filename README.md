@@ -1,24 +1,28 @@
 # AI 家庭财务盘点
 
-这是一个基于 Next.js 的家庭资产盘点与评估 H5。
+这是一个基于 Next.js 的家庭资产盘点与评估 H5。它当前是一个不依赖数据库的单体 Web 项目，适合先快速上线验证，再逐步扩展成更完整的线上服务。
 
-核心能力：
+## 1. 本地项目当前架构
 
-- 3 步问卷采集家庭资产、负债、现金流和风险偏好
-- 服务端按固定规则计算核心指标
-- 调用 `gpt-5.4` 生成个性化分析与建议
-- 输出适合手机端展示的可视化报告
+### 1.1 技术栈
 
-这套服务本身是标准 Web 应用；如果和 `ecom-image` 一起上线，建议把两者视为两套独立服务。
+- 前端与服务端框架：Next.js 16
+- UI 运行时：React 19
+- 服务端运行时：Node.js
+- 数据校验：Zod
+- 外部 AI 接口：OpenAI 兼容 Responses API
 
-## 1. 当前项目结构
+### 1.2 当前目录结构
 
 ```text
 家庭资产评估版本2/
 ├── app/
 │   ├── globals.css
 │   ├── layout.tsx
-│   └── page.tsx
+│   ├── page.tsx
+│   └── api/
+│       └── assessment/
+│           └── route.ts
 ├── components/
 │   └── assessment-experience.tsx
 ├── lib/
@@ -35,245 +39,381 @@
 │       └── types.ts
 ├── .env.example
 ├── .env.local
+├── .gitignore
 ├── next.config.ts
 ├── package.json
+├── package-lock.json
 └── README.md
 ```
 
-## 2. 本地启动
+### 1.3 架构分层说明
 
-```bash
-npm install
-cp .env.example .env.local
-npm run dev
+这个项目当前可以按下面 4 层理解：
+
+1. 页面层
+
+- `app/page.tsx`
+- `components/assessment-experience.tsx`
+
+这一层负责展示 H5 页面、收集用户输入、触发生成请求、展示最终报告。
+
+2. API 层
+
+- `app/api/assessment/route.ts`
+
+这一层负责接收前端提交的数据、读取环境变量、调用外部 AI 接口，并把流式结果返回给前端。
+
+3. 业务逻辑层
+
+- `lib/assessment/*.ts`
+
+这一层负责：
+
+- 指标计算
+- 文案与标签映射
+- 数据格式整理
+- 报告结构生成
+- 请求 schema 校验
+
+4. 配置层
+
+- `.env.local`
+- `.env.example`
+- `next.config.ts`
+- `package.json`
+
+这一层负责运行环境、模型接口地址、构建和启动方式。
+
+### 1.4 当前运行链路
+
+项目当前的真实运行流程是：
+
+```text
+用户打开 H5
+-> 填写资产/负债/现金流问卷
+-> 前端调用 /api/assessment
+-> 服务端校验数据并组装 prompt
+-> 服务端请求 OpenAI 兼容接口
+-> AI 返回流式分析结果
+-> 页面实时展示结果
 ```
 
-打开 `http://localhost:3000`
+### 1.5 当前项目边界
 
-## 3. 环境变量
+这个项目当前已经具备：
 
-在 `.env.local` 中配置：
+- 问卷采集
+- 规则计算
+- AI 分析生成
+- H5 页面展示
+- 生产构建与服务器部署能力
+
+这个项目当前还没有：
+
+- 用户登录
+- 数据库
+- 报告持久化
+- 管理后台
+- 多租户系统
+
+因此，当前 GitHub 上的版本更准确地说，是一个“可部署的单体 Next.js 应用”，而不是完整的带后台运营能力的 SaaS 系统。
+
+## 2. 上传到 GitHub 的是什么版本
+
+当前上传到 GitHub 的是“源码仓库版本”，不是你本地电脑上的完整运行态目录。
+
+### 2.1 GitHub 上包含什么
+
+GitHub 上当前包含的是：
+
+- 页面源码
+- API 源码
+- 业务逻辑源码
+- `package.json`
+- `package-lock.json`
+- `README.md`
+- `.env.example`
+- `.gitignore`
+
+也就是说，GitHub 上保存的是“可重新安装、可重新构建、可重新部署”的项目源码。
+
+### 2.2 GitHub 上不包含什么
+
+根据当前 `.gitignore` 配置，以下内容不会被上传：
+
+```text
+.next
+node_modules
+.env.local
+.DS_Store
+npm-debug.log*
+```
+
+这意味着 GitHub 上不包含：
+
+- 真实 API key
+- 你本地的私密环境变量
+- 已安装依赖
+- 本地构建产物
+- Finder 垃圾文件
+
+### 2.3 这意味着什么
+
+这很重要，因为它直接决定了你从 GitHub 拉到别的机器后，不能“直接运行”，而是要先补齐运行条件。
+
+换句话说：
+
+- GitHub 上的是“源码版”
+- 你本地电脑里的是“源码 + 本地配置 + 已安装依赖 + 构建缓存”的运行版
+
+### 2.4 当前 GitHub 版本的定位
+
+当前 GitHub 上的版本，适合做下面几件事：
+
+- 在另一台电脑上重新拉取源码继续开发
+- 在阿里云服务器上重新部署
+- 作为版本记录和备份
+- 以后通过 `git pull` 更新服务器
+
+它不适合直接拿来做下面这些事：
+
+- 不补环境变量就直接调用模型
+- 不安装依赖就直接启动
+- 把 GitHub 当作生产环境配置存储
+
+## 3. 从 GitHub 拉到本地后，需要先做哪些处理
+
+假设你是在一台新的本地电脑上拉取这个项目。
+
+### 3.1 拉取源码
 
 ```bash
-OPENAI_API_KEY=你的API Key
+git clone https://github.com/patpjy/family-finance-assessment.git
+cd family-finance-assessment
+```
+
+### 3.2 检查 Node.js 版本
+
+建议使用 Node.js 20 或更高版本。
+
+先检查：
+
+```bash
+node -v
+npm -v
+```
+
+如果没有安装 Node.js，或者版本太低，先安装或升级，再继续。
+
+### 3.3 创建本地环境变量文件
+
+GitHub 上只有 `.env.example`，没有 `.env.local`。所以拉下来后要先自己创建：
+
+```bash
+cp .env.example .env.local
+```
+
+然后编辑 `.env.local`，填入真实配置：
+
+```bash
+OPENAI_API_KEY=你的真实 key
 OPENAI_BASE_URL=https://www.packyapi.com/v1
 OPENAI_MODEL=gpt-5.4
 OPENAI_REASONING_EFFORT=medium
 ```
 
-说明：
+如果这一步不做，运行时就可能报：
 
-- `OPENAI_BASE_URL` 支持 OpenAI 兼容接口
-- 默认模型为 `gpt-5.4`
-- 如果未配置 API Key，建议在上线前补齐，不要把生产环境建立在兜底逻辑上
+- API key 未配置
+- 请求 AI 接口失败
 
-## 4. 工作流程
-
-1. 用户填写 3 步问卷
-2. 前端提交家庭资产与现金流信息
-3. 服务端做规则计算
-4. 调用 `gpt-5.4` 生成个性化分析
-5. 返回结构化报告并在页面展示
-
-## 5. 生产部署
-
-这是标准 Next.js 服务，生产环境可部署到：
-
-- Vercel
-- 腾讯云 CloudBase
-- 阿里云 ECS
-- 任何支持 Node.js 的容器平台
-
-常规启动方式：
+### 3.4 安装依赖
 
 ```bash
+npm install
+```
+
+这一步会安装 `next`、`react`、`zod` 等项目依赖，并生成本机可用的 `node_modules`。
+
+### 3.5 本地开发启动
+
+```bash
+npm run dev
+```
+
+然后访问：
+
+```text
+http://localhost:3000
+```
+
+### 3.6 如果要验证生产构建
+
+```bash
+npm run build
+npm run start
+```
+
+这一步的意义是验证：
+
+- 代码能否成功构建
+- 生产模式是否可运行
+
+## 4. 从 GitHub 拉到服务器后，需要先做哪些处理
+
+假设你是在阿里云 ECS 上部署。
+
+### 4.1 服务器先准备基础环境
+
+至少需要：
+
+- Git
+- Node.js 20+
+- npm
+
+检查命令：
+
+```bash
+git --version
+node -v
+npm -v
+```
+
+### 4.2 在服务器上拉取源码
+
+```bash
+mkdir -p /root/apps
+cd /root/apps
+git clone https://github.com/patpjy/family-finance-assessment.git
+cd family-finance-assessment
+```
+
+### 4.3 在服务器上创建 `.env.local`
+
+这一点非常关键。服务器上也必须单独创建一份 `.env.local`，因为 GitHub 不会保存真实密钥。
+
+```bash
+cat > .env.local <<'EOF'
+OPENAI_API_KEY=你的真实 key
+OPENAI_BASE_URL=https://www.packyapi.com/v1
+OPENAI_MODEL=gpt-5.4
+OPENAI_REASONING_EFFORT=medium
+EOF
+```
+
+### 4.4 在服务器上安装依赖
+
+```bash
+npm install
+```
+
+### 4.5 在服务器上做生产构建
+
+```bash
+npm run build
+```
+
+如果这一步报错，不要急着启动，要先把报错解决掉。
+
+### 4.6 在服务器上启动服务
+
+```bash
+npm run start
+```
+
+默认会监听 `3000` 端口。
+
+### 4.7 检查安全组
+
+如果你想直接从浏览器访问：
+
+```text
+http://服务器公网IP:3000
+```
+
+那还要确保阿里云安全组已经放行 `3000` 端口。
+
+如果安全组没放行，就会出现：
+
+- 服务已经启动
+- 但浏览器打不开
+
+### 4.8 更适合长期维护的启动方式
+
+临时测试可以直接：
+
+```bash
+npm run start
+```
+
+但正式环境建议后续补上：
+
+- `pm2`
+- `systemd`
+- `Nginx` 或 `Caddy`
+
+否则你关闭终端后，服务可能会中断。
+
+## 5. 本地和服务器同步更新的推荐流程
+
+后续建议按这个流程更新：
+
+1. 在本地改代码
+2. 本地自测
+3. 提交 Git
+4. 推送到 GitHub
+5. 服务器进入项目目录
+6. 执行 `git pull`
+7. 如依赖有变化则执行 `npm install`
+8. 重新执行 `npm run build`
+9. 重启服务
+
+常见命令如下：
+
+本地：
+
+```bash
+git add .
+git commit -m "你的更新说明"
+git push
+```
+
+服务器：
+
+```bash
+cd /root/apps/family-finance-assessment
+git pull
 npm install
 npm run build
 npm run start
 ```
 
-如果要放到正式服务器，建议：
+如果以后用了 `pm2` 或 `systemd`，最后一步会从手动 `npm run start` 变成“重启进程”。
 
-1. 使用 Node.js 20+
-2. 用 Nginx 或云平台网关反代到应用端口
-3. 把 `.env.local` 或等价环境变量放到服务端，不要写死到仓库
-4. 配置进程守护，比如 `pm2`、systemd 或容器编排
+## 6. 当前环境变量说明
 
-## 6. 和 `ecom-image` 联合部署时的定位
+当前项目实际使用的是以下环境变量：
 
-这套家庭财务盘点服务和 `ecom-image` 的性质不同：
+```bash
+OPENAI_API_KEY=
+OPENAI_BASE_URL=https://www.packyapi.com/v1
+OPENAI_MODEL=gpt-5.4
+OPENAI_REASONING_EFFORT=medium
+```
 
-- 家庭财务盘点：标准 Web/H5 服务
-- `ecom-image`：OpenClaw 网关 + 飞书通道 + 图片任务处理 + 外部模型调用
+说明如下：
 
-所以它们可以放在同一台机器上，但不应该混成同一个进程，也不应该共用一套业务目录。
+- `OPENAI_API_KEY`：真实鉴权 key
+- `OPENAI_BASE_URL`：OpenAI 兼容接口地址
+- `OPENAI_MODEL`：默认模型名
+- `OPENAI_REASONING_EFFORT`：推理强度
 
-推荐最小拆分方式：
+## 7. 一句话总结
 
-- 一个 Web 服务进程：家庭财务盘点 H5
-- 一个 OpenClaw gateway 进程：承载 `ecom-image`
+当前这个项目的正确理解方式是：
 
-如果以后再把另外四个 Agent 也放上来，建议继续保持：
+- 本地目录是“源码 + 本地配置 + 本地依赖 + 本地构建缓存”
+- GitHub 上是“可重新部署的源码仓库版本”
+- 无论拉到新的本地电脑还是服务器，都要先补 `.env.local`，再 `npm install`，再启动或构建
 
-- 每个 Agent 维持自己的 `workspace/`
-- 各 Agent 的独立配置保持隔离
-- 共享的只有网关运行时和系统资源
-
-## 7. 这次 `ecom-image` 修复的内容，以及对其他 Agent 的影响
-
-这次修的是 OpenClaw 网关的消息解析层，不是家庭财务盘点项目本身。
-
-### 7.1 问题根因
-
-飞书图片消息正文前面会带 `![image]`。
-
-OpenClaw 旧逻辑里把以 `!` 开头的聊天内容也当作 bash 快捷入口，所以飞书图文消息被误判成 bash，返回：
-
-- `bash is disabled. Set commands.bash=true to enable.`
-
-### 7.2 实际修复点
-
-这次修复做了两件事：
-
-1. 清洗飞书消息时，不再把 `![image]` 清成残留的 `!`
-2. 关闭旧的 `!` bash 聊天快捷入口，只保留 `/bash ...`
-
-### 7.3 没有改动的内容
-
-这次没有去改另外四个 Agent 的：
-
-- `workspace/`
-- `agent/models.json`
-- `agent/auth-profiles.json`
-- 提示词文件
-- 记忆文件
-- README 文档
-
-也没有改家庭财务盘点服务的业务逻辑、页面逻辑、报告逻辑。
-
-### 7.4 真正被影响的范围
-
-这次改动属于“网关运行时级别”的修复，所以要这样理解影响边界：
-
-- `ecom-image`：直接受益，飞书图文消息恢复正常
-- 其他四个 Agent：业务逻辑没改，但如果共用同一个 OpenClaw 网关进程，那么它们也会一起失去旧的 `!` bash 快捷入口
-- 家庭财务盘点服务：完全不受这次修复影响
-
-换句话说：
-
-- 没有改其他四个 Agent 的内容
-- 但如果它们挂在同一个网关实例上，命令解析行为会统一变成“只认 `/bash`，不再认 `!`”
-
-### 7.5 整体影响总结
-
-这不是一次多 Agent 行为重构，只是一次网关入口解析修复。
-
-整体目的只有一个：
-
-- 防止飞书图片消息被错误识别成 bash 命令
-
-正式上线前，要把这次修复固化到你自己可维护的 OpenClaw 版本里；否则重建容器、重拉镜像或升级版本后，这个修复可能丢失。
-
-## 8. 单机部署时的容量边界
-
-如果你只租一台机器，同时想跑：
-
-1. `ecom-image`
-2. 家庭财务盘点 H5
-3. 后续另外四个 Agent
-
-那么容量判断要分三档看：
-
-### 8.1 只跑两套服务
-
-如果只跑：
-
-- 一个 `ecom-image`
-- 一个家庭财务盘点 H5
-
-并且访问量很小、飞书消息不密集，那么低配机器可以跑起来。
-
-### 8.2 再加另外四个 Agent，但它们大多空闲
-
-如果另外四个 Agent 只是挂着、偶尔触发、并且各自依赖的本地后端也不重，那么单机仍然能跑，但资源会开始紧张。
-
-紧张点主要在：
-
-- OpenClaw gateway 常驻内存
-- 各 Agent 会话和上下文
-- 图片下载、日志、缓存
-- Web 服务的峰值响应
-
-### 8.3 六个 Agent + H5 都长期在线并频繁工作
-
-这种情况下，低配单机就不适合了。
-
-尤其当另外四个 Agent 还依赖各自本地 bridge、爬取服务、API 转发或后台进程时，内存和 CPU 都会明显吃紧。
-
-## 9. 当前服务选型建议
-
-如果你只能租一台阿里云机器，并且后面目标是：
-
-- 跑 `ecom-image`
-- 跑家庭财务盘点 H5
-- 逐步把另外四个 Agent 也迁上去
-
-我的建议是：
-
-- 不要选 `2核2G` 作为长期方案
-
-更准确地说：
-
-- `2核2G`：适合非常早期验证，不适合你后面的完整目标
-- `2核4G`：勉强可作为早期单机方案
-- `4核8G`：更像真正可长期维护的起步配置
-
-这里要注意，这不是阿里云官方给出的“承载上限”，而是基于你当前服务形态做的工程判断。
-
-根据阿里云官方产品定位：
-
-- 轻量应用服务器更偏轻应用和网站快速搭建
-- ECS 云服务器更偏自定义部署和更灵活的资源管理
-
-参考：
-
-- [阿里云轻量应用服务器](https://www.aliyun.com/product/swas)
-- [阿里云 ECS 云服务器](https://www.aliyun.com/product/ecs)
-- [阿里云：轻量应用服务器与 ECS 对比](https://help.aliyun.com/zh/simple-application-server/product-overview/comparison-between-simple-application-server-and-ecs)
-
-如果你的目标真的是“后面六个 Agent 都要上云”，建议优先选 ECS，而不是把长期方案压在轻量 2核2G 上。
-
-## 10. 当前实现边界
-
-### 家庭财务盘点 H5
-
-- 已完成问卷、规则计算、AI 分析、报告渲染
-- 当前不带数据库
-- 当前更适合即时生成，不适合重度历史留存与后台运营
-
-如果下一步要做：
-
-- 永久保存报告
-- 用户登录
-- 顾问后台
-- 线索管理
-
-建议继续补：
-
-- 数据库
-- 鉴权
-- 后台管理端
-
-### `ecom-image`
-
-- 已能跑通飞书收图、主模型理解、提示词规划、DashScope 出图、结果回传
-- 当前底层生图依然更适合“快速验证”，不是最终高质量生产方案
-- 如果后面追求更高一致性和可控性，建议升级到底层 ComfyUI 工作流
-
-## 11. 当前目录内已有材料
-
-当前目录保留了原始业务材料，方便后续继续对齐：
-
-- `主模板.docx`
-- `提示词.docx`
-- `评估报告（示例）.docx`
+只要记住这一点，后面你自己迁机器、换服务器、做更新，就不会乱。
