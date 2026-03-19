@@ -130,6 +130,75 @@ h1, h2, h3 {
   line-height: 1.8;
 }
 
+/* ── Model picker ────────────────────────────────────── */
+.model-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.model-picker-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  letter-spacing: 0.04em;
+}
+
+.model-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.model-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.2s var(--ease);
+}
+
+.model-opt:hover {
+  border-color: var(--accent);
+}
+
+.model-opt.active {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.model-opt input {
+  display: none;
+}
+
+.model-opt-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.model-opt-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: rgba(47, 93, 80, 0.1);
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+
+.model-opt-tag.pro {
+  background: rgba(176, 122, 50, 0.1);
+  color: var(--gold);
+}
+
 .hero-meta,
 .pill-row,
 .result-meta,

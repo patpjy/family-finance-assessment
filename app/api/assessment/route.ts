@@ -5,104 +5,222 @@ export const runtime = "nodejs";
 
 const enc = new TextEncoder();
 
+/* ── Model configurations ── */
+interface ModelConfig {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  format: "responses" | "chat";  // Responses API vs Chat Completions
+  reasoningEffort?: string;
+}
+
+const SF_BASE = "https://api.siliconflow.cn/v1";
+
+const SF_MODELS: Record<string, { envKey: string; model: string }> = {
+  deepseek: { envKey: "SF_DEEPSEEK_API_KEY", model: "deepseek-ai/DeepSeek-V3.2" },
+  kimi:     { envKey: "SF_KIMI_API_KEY",     model: "Pro/moonshotai/Kimi-K2.5" },
+  minimax:  { envKey: "SF_MINIMAX_API_KEY",  model: "Pro/MiniMaxAI/MiniMax-M2.5" },
+  qwen:     { envKey: "SF_QWEN_API_KEY",     model: "Qwen/Qwen3.5-122B-A10B" },
+};
+
+function getModelConfig(modelChoice: string): ModelConfig | null {
+  if (modelChoice === "gpt5") {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return null;
+    return {
+      apiKey,
+      baseUrl: (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, ""),
+      model: process.env.OPENAI_MODEL || "gpt-5.4",
+      format: "responses",
+      reasoningEffort: process.env.OPENAI_REASONING_EFFORT || "medium",
+    };
+  }
+
+  // SiliconFlow models
+  const sf = SF_MODELS[modelChoice];
+  if (!sf) return null;
+  const apiKey = process.env[sf.envKey];
+  if (!apiKey) return null;
+  return {
+    apiKey,
+    baseUrl: SF_BASE,
+    model: sf.model,
+    format: "chat",
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const payload = await request.json();
+    const modelChoice = typeof payload.modelChoice === "string" ? payload.modelChoice : "deepseek";
     const input = assessmentSchema.parse(payload);
     const prompt = buildPrompt(input);
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    const model = process.env.OPENAI_MODEL || "gpt-5.4";
-    const effort = process.env.OPENAI_REASONING_EFFORT || "high";
-    const baseUrl = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
-    const endpoint = baseUrl.endsWith("/v1") ? `${baseUrl}/responses` : baseUrl.endsWith("/responses") ? baseUrl : `${baseUrl}/v1/responses`;
-
-    if (!apiKey) {
-      return Response.json({ error: "未配置 API Key" }, { status: 500 });
+    const config = getModelConfig(modelChoice);
+    if (!config) {
+      return Response.json({ error: "未配置该模型的 API Key" }, { status: 500 });
     }
 
-    const aiRes = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        stream: true,
-        reasoning: { effort, summary: "auto" },
-        input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
-        text: { format: { type: "text" } },
-      }),
-    });
-
-    if (!aiRes.ok || !aiRes.body) {
-      const errText = await aiRes.text().catch(() => "AI API error");
-      return Response.json({ error: errText }, { status: 502 });
+    if (config.format === "responses") {
+      return streamResponsesAPI(config, prompt);
     }
-
-    // Pipe Responses API SSE → our simplified SSE
-    const reader = aiRes.body.getReader();
-    const decoder = new TextDecoder();
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        const send = (data: Record<string, unknown>) => {
-          controller.enqueue(enc.encode(`data: ${JSON.stringify(data)}\n\n`));
-        };
-
-        let buffer = "";
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-
-            const parts = buffer.split("\n");
-            buffer = parts.pop() ?? "";
-
-            for (const line of parts) {
-              const trimmed = line.trim();
-              if (!trimmed.startsWith("data: ")) continue;
-              try {
-                const data = JSON.parse(trimmed.slice(6));
-
-                // Reasoning summary items (thinking)
-                if (data.type === "response.reasoning_summary_text.delta") {
-                  send({ type: "thinking", text: data.delta });
-                }
-
-                // Output text tokens
-                if (data.type === "response.output_text.delta") {
-                  send({ type: "token", text: data.delta });
-                }
-
-                // Done
-                if (data.type === "response.completed") {
-                  send({ type: "done" });
-                }
-              } catch {
-                // skip
-              }
-            }
-          }
-        } catch {
-          send({ type: "done" });
-        }
-        controller.close();
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    });
+    return streamChatCompletions(config, prompt);
   } catch (error) {
     const message = error instanceof Error ? error.message : "请求无效";
     return Response.json({ error: message }, { status: 400 });
   }
 }
 
+/* ── OpenAI Responses API (GPT-5) ── */
+async function streamResponsesAPI(config: ModelConfig, prompt: string) {
+  const base = config.baseUrl;
+  const endpoint = base.endsWith("/v1")
+    ? `${base}/responses`
+    : base.endsWith("/responses") ? base : `${base}/v1/responses`;
+
+  const aiRes = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
+    body: JSON.stringify({
+      model: config.model,
+      stream: true,
+      reasoning: { effort: config.reasoningEffort, summary: "auto" },
+      input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
+      text: { format: { type: "text" } },
+    }),
+  });
+
+  if (!aiRes.ok || !aiRes.body) {
+    const errText = await aiRes.text().catch(() => "AI API error");
+    return Response.json({ error: errText }, { status: 502 });
+  }
+
+  const reader = aiRes.body.getReader();
+  const decoder = new TextDecoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: Record<string, unknown>) => {
+        controller.enqueue(enc.encode(`data: ${JSON.stringify(data)}\n\n`));
+      };
+
+      let buffer = "";
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const parts = buffer.split("\n");
+          buffer = parts.pop() ?? "";
+
+          for (const line of parts) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data: ")) continue;
+            try {
+              const data = JSON.parse(trimmed.slice(6));
+              if (data.type === "response.reasoning_summary_text.delta") {
+                send({ type: "thinking", text: data.delta });
+              }
+              if (data.type === "response.output_text.delta") {
+                send({ type: "token", text: data.delta });
+              }
+              if (data.type === "response.completed") {
+                send({ type: "done" });
+              }
+            } catch { /* skip */ }
+          }
+        }
+      } catch {
+        send({ type: "done" });
+      }
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
+  });
+}
+
+/* ── OpenAI Chat Completions API (DeepSeek, etc.) ── */
+async function streamChatCompletions(config: ModelConfig, prompt: string) {
+  const base = config.baseUrl;
+  const endpoint = base.endsWith("/v1")
+    ? `${base}/chat/completions`
+    : base.endsWith("/chat/completions") ? base : `${base}/v1/chat/completions`;
+
+  const aiRes = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
+    body: JSON.stringify({
+      model: config.model,
+      stream: true,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+
+  if (!aiRes.ok || !aiRes.body) {
+    const errText = await aiRes.text().catch(() => "AI API error");
+    return Response.json({ error: errText }, { status: 502 });
+  }
+
+  const reader = aiRes.body.getReader();
+  const decoder = new TextDecoder();
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: Record<string, unknown>) => {
+        controller.enqueue(enc.encode(`data: ${JSON.stringify(data)}\n\n`));
+      };
+
+      let buffer = "";
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const parts = buffer.split("\n");
+          buffer = parts.pop() ?? "";
+
+          for (const line of parts) {
+            const trimmed = line.trim();
+            if (trimmed === "data: [DONE]") {
+              send({ type: "done" });
+              continue;
+            }
+            if (!trimmed.startsWith("data: ")) continue;
+            try {
+              const data = JSON.parse(trimmed.slice(6));
+              const delta = data.choices?.[0]?.delta;
+              if (!delta) continue;
+
+              // DeepSeek reasoning_content (thinking)
+              if (delta.reasoning_content) {
+                send({ type: "thinking", text: delta.reasoning_content });
+              }
+
+              // Regular content tokens
+              if (delta.content) {
+                send({ type: "token", text: delta.content });
+              }
+            } catch { /* skip */ }
+          }
+        }
+      } catch {
+        send({ type: "done" });
+      }
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
+  });
+}
+
+/* ── Prompt builder ── */
 function buildPrompt(input: ReturnType<typeof assessmentSchema.parse>) {
   const data = [
     `活钱（现金/余额宝等）：${input.x1} 万元`,

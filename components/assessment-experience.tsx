@@ -52,6 +52,7 @@ export function AssessmentExperience() {
   const [output, setOutput] = useState("");
   const [done, setDone] = useState(false);
   const [toast, setToast] = useState("");
+  const [modelChoice, setModelChoice] = useState<"deepseek" | "kimi" | "minimax" | "qwen" | "gpt5">("deepseek");
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const outputRef = useRef<HTMLDivElement>(null);
   const reportRef = useRef<HTMLDivElement>(null);
@@ -160,6 +161,7 @@ export function AssessmentExperience() {
 
     try {
       const payload = {
+        modelChoice,
         x1: Number(form.x1), x2: Number(form.x2), x3: Number(form.x3),
         x41: Number(form.x41), x42: Number(form.x42),
         d1: Number(form.d1), d2: Number(form.d2),
@@ -231,6 +233,33 @@ export function AssessmentExperience() {
         <div className="hero-copy">
           <h1>AI 家庭财务盘点</h1>
           <p className="hero-text">填写 3 步问卷，AI 实时计算并生成个性化深度分析报告。</p>
+        </div>
+        <div className="model-picker">
+          <span className="model-picker-label">分析引擎</span>
+          <div className="model-options">
+            <label className={`model-opt${modelChoice === "deepseek" ? " active" : ""}`}>
+              <input type="radio" name="model" checked={modelChoice === "deepseek"} onChange={() => setModelChoice("deepseek")} />
+              <span className="model-opt-name">DeepSeek V3.2</span>
+              <span className="model-opt-tag">推荐</span>
+            </label>
+            <label className={`model-opt${modelChoice === "kimi" ? " active" : ""}`}>
+              <input type="radio" name="model" checked={modelChoice === "kimi"} onChange={() => setModelChoice("kimi")} />
+              <span className="model-opt-name">Kimi K2.5</span>
+            </label>
+            <label className={`model-opt${modelChoice === "minimax" ? " active" : ""}`}>
+              <input type="radio" name="model" checked={modelChoice === "minimax"} onChange={() => setModelChoice("minimax")} />
+              <span className="model-opt-name">MiniMax M2.5</span>
+            </label>
+            <label className={`model-opt${modelChoice === "qwen" ? " active" : ""}`}>
+              <input type="radio" name="model" checked={modelChoice === "qwen"} onChange={() => setModelChoice("qwen")} />
+              <span className="model-opt-name">Qwen 3.5</span>
+            </label>
+            <label className={`model-opt${modelChoice === "gpt5" ? " active" : ""}`}>
+              <input type="radio" name="model" checked={modelChoice === "gpt5"} onChange={() => setModelChoice("gpt5")} />
+              <span className="model-opt-name">GPT-5.4</span>
+              <span className="model-opt-tag pro">Pro</span>
+            </label>
+          </div>
         </div>
       </section>
 
