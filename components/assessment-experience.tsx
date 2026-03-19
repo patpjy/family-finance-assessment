@@ -35,6 +35,7 @@ const emptyForm: FormState = {
 };
 
 const ALLOC_COLORS = ["#2f5d50", "#4a9882", "#b07a32", "#6bb5a0", "#7a3a28", "#c9a96e", "#5c8a7d", "#d4a853"];
+const SESSION_KEY = "assessment-session";
 
 function statusIcon(s: string) {
   if (s === "good") return "\u2705";
@@ -55,8 +56,12 @@ export function AssessmentExperience() {
   const [modelChoice, setModelChoice] = useState<"deepseek" | "kimi" | "minimax" | "qwen" | "gpt5">("deepseek");
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const outputRef = useRef<HTMLDivElement>(null);
+  const thinkingRef = useRef<HTMLDivElement>(null);
   const reportRef = useRef<HTMLDivElement>(null);
   const userScrolledUp = useRef(false);
+  const thinkingScrolledUp = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(false);
 
   const progress = useMemo(() => `${((step + 1) / steps.length) * 100}%`, [step]);
 
@@ -75,12 +80,48 @@ export function AssessmentExperience() {
     setTimeout(() => setToast(""), 2000);
   }, []);
 
-  // Auto-scroll streaming panel
+  // ── Restore state from sessionStorage on mount ──
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(SESSION_KEY);
+      if (!saved) return;
+      const s = JSON.parse(saved);
+      if (s.thinking) setThinking(s.thinking);
+      if (s.output) setOutput(s.output);
+      if (s.done) setDone(s.done);
+      if (s.reportData) setReportData(s.reportData);
+      if (s.modelChoice) setModelChoice(s.modelChoice);
+      // If was streaming when user left, mark as interrupted (not streaming, but show content)
+      // streaming is NOT restored — the connection is lost
+    } catch { /* ignore */ }
+    mountedRef.current = true;
+  }, []);
+
+  // ── Save state to sessionStorage whenever it changes ──
+  useEffect(() => {
+    if (!mountedRef.current) return;
+    if (!thinking && !output && !done) {
+      sessionStorage.removeItem(SESSION_KEY);
+      return;
+    }
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+      thinking, output, done, reportData, modelChoice,
+    }));
+  }, [thinking, output, done, reportData, modelChoice]);
+
+  // ── Auto-scroll main AI panel ──
   useEffect(() => {
     const el = outputRef.current;
     if (!el || !streaming || userScrolledUp.current) return;
     el.scrollTop = el.scrollHeight;
   }, [output, thinking, streaming]);
+
+  // ── Auto-scroll thinking box ──
+  useEffect(() => {
+    const el = thinkingRef.current;
+    if (!el || thinkingScrolledUp.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [thinking]);
 
   // Parse report JSON when streaming finishes
   useEffect(() => {
@@ -135,6 +176,8 @@ export function AssessmentExperience() {
   const goPrev = () => { setError(""); setStep((s) => Math.max(s - 1, 0)); };
 
   const handleReset = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
     setForm(emptyForm);
     setStep(0);
     setError("");
@@ -143,7 +186,18 @@ export function AssessmentExperience() {
     setOutput("");
     setDone(false);
     setReportData(null);
+    sessionStorage.removeItem(SESSION_KEY);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleStop = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setStreaming(false);
+    setThinking("");
+    setOutput("");
+    setDone(false);
+    sessionStorage.removeItem(SESSION_KEY);
   };
 
   const handleSubmit = async () => {
@@ -151,6 +205,11 @@ export function AssessmentExperience() {
       setError("请至少选择 1 个主要目标。");
       return;
     }
+    abortRef.current?.abort();
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setError("");
     setStreaming(true);
     setThinking("");
@@ -158,6 +217,10 @@ export function AssessmentExperience() {
     setDone(false);
     setReportData(null);
     userScrolledUp.current = false;
+    thinkingScrolledUp.current = false;
+
+    let hasContent = false;
+    let receivedDone = false;
 
     try {
       const payload = {
@@ -176,6 +239,7 @@ export function AssessmentExperience() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
 
       if (!res.ok || !res.body) {
@@ -198,13 +262,20 @@ export function AssessmentExperience() {
           if (!trimmed.startsWith("data: ")) continue;
           try {
             const data = JSON.parse(trimmed.slice(6));
-            if (data.type === "thinking") setThinking((p) => p + data.text);
-            else if (data.type === "token") setOutput((p) => p + data.text);
-            else if (data.type === "done") { setDone(true); setStreaming(false); }
+            if (data.type === "thinking") { hasContent = true; setThinking((p) => p + data.text); }
+            else if (data.type === "token") { hasContent = true; setOutput((p) => p + data.text); }
+            else if (data.type === "done") { receivedDone = true; setDone(true); setStreaming(false); }
           } catch { /* skip */ }
         }
       }
+
+      // Safety: if stream ended without explicit done event but we have content
+      if (!receivedDone && hasContent) {
+        setDone(true);
+        setStreaming(false);
+      }
     } catch (err) {
+      if ((err as Error).name === "AbortError") return;
       setError(err instanceof Error ? err.message : "分析失败，请稍后重试。");
       setStreaming(false);
     }
@@ -212,7 +283,6 @@ export function AssessmentExperience() {
 
   const hasOutput = streaming || output || thinking;
 
-  // AI panel status: only about analysis streaming
   const aiStatus = done
     ? "推理分析完成"
     : output
@@ -225,6 +295,12 @@ export function AssessmentExperience() {
     const el = outputRef.current;
     if (!el) return;
     userScrolledUp.current = el.scrollHeight - el.scrollTop - el.clientHeight > 40;
+  };
+
+  const handleThinkingScroll = () => {
+    const el = thinkingRef.current;
+    if (!el) return;
+    thinkingScrolledUp.current = el.scrollHeight - el.scrollTop - el.clientHeight > 20;
   };
 
   return (
@@ -362,11 +438,18 @@ export function AssessmentExperience() {
                   {!done && <span className="spinner-sm" />}
                   {aiStatus}
                 </div>
-                {done && (
-                  <button className="ghost-btn copy-btn" onClick={() => { navigator.clipboard.writeText(detailedOutput); showToast("已复制"); }}>
-                    复制分析
-                  </button>
-                )}
+                <div className="ai-panel-actions">
+                  {streaming && (
+                    <button className="ghost-btn stop-btn" type="button" onClick={handleStop}>
+                      终止分析
+                    </button>
+                  )}
+                  {done && (
+                    <button className="ghost-btn copy-btn" onClick={() => { navigator.clipboard.writeText(detailedOutput); showToast("已复制"); }}>
+                      复制分析
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="ai-scroll" ref={outputRef} onScroll={handleOutputScroll}>
@@ -376,7 +459,7 @@ export function AssessmentExperience() {
                       <span className={`phase-dot${output ? " completed" : " active"}`} />
                       推理过程
                     </summary>
-                    <div className="thinking-text">{thinking}</div>
+                    <div className="thinking-text" ref={thinkingRef} onScroll={handleThinkingScroll}>{thinking}</div>
                   </details>
                 )}
                 {detailedOutput && (
@@ -388,6 +471,7 @@ export function AssessmentExperience() {
                     <div className="ai-output">
                       {detailedOutput.split(/\n+/).filter(Boolean).map((p, i) => <p key={i}>{p}</p>)}
                       {streaming && <span className="cursor" />}
+                      {streaming && <p className="ai-hint">分析完成后将自动生成报告，请稍候...</p>}
                     </div>
                   </div>
                 )}
@@ -404,7 +488,8 @@ export function AssessmentExperience() {
             /* Loading state */
             <div className="report-loading">
               <span className="spinner-lg" />
-              <p>正在生成分析报告...</p>
+              <p>正在生成家庭财务健康报告...</p>
+              <button type="button" className="ghost-btn stop-btn" onClick={handleReset}>终止生成</button>
             </div>
           ) : (
             /* Full report */
@@ -463,7 +548,7 @@ export function AssessmentExperience() {
                 <div className="rpt-card">
                   <h3 className="rpt-card-title">资产负债明细</h3>
                   <table className="rpt-table">
-                    <colgroup><col /><col style={{ width: "100px" }} /><col style={{ width: "80px" }} /></colgroup>
+                    <colgroup><col style={{ width: "40%" }} /><col style={{ width: "35%" }} /><col style={{ width: "25%" }} /></colgroup>
                     <thead><tr><th>资产项目</th><th>金额（万）</th><th>占比</th></tr></thead>
                     <tbody>
                       {reportData.assets.map((a, i) => (
@@ -479,7 +564,7 @@ export function AssessmentExperience() {
 
                   {reportData.debts.length > 0 && (
                     <table className="rpt-table rpt-table-debt">
-                      <colgroup><col /><col style={{ width: "100px" }} /></colgroup>
+                      <colgroup><col style={{ width: "40%" }} /><col style={{ width: "60%" }} /></colgroup>
                       <thead><tr><th>负债项目</th><th>金额（万）</th></tr></thead>
                       <tbody>
                         {reportData.debts.map((d, i) => (

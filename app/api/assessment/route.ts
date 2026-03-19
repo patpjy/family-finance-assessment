@@ -132,8 +132,10 @@ async function streamResponsesAPI(config: ModelConfig, prompt: string) {
           }
         }
       } catch {
-        send({ type: "done" });
+        /* stream error */
       }
+      // Always send done at the end
+      send({ type: "done" });
       controller.close();
     },
   });
@@ -209,8 +211,10 @@ async function streamChatCompletions(config: ModelConfig, prompt: string) {
           }
         }
       } catch {
-        send({ type: "done" });
+        /* stream error */
       }
+      // Always send done at the end
+      send({ type: "done" });
       controller.close();
     },
   });

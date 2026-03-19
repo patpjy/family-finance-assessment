@@ -93,6 +93,8 @@ button { border: 0; cursor: pointer; }
 .hero-copy {
   position: relative;
   max-width: 640px;
+  margin: 0 auto;
+  text-align: center;
 }
 
 .eyebrow,
@@ -124,7 +126,7 @@ h1, h2, h3 {
 
 .hero-text {
   max-width: 520px;
-  margin: 16px 0 0;
+  margin: 16px auto 0;
   color: var(--ink-secondary);
   font-size: 15px;
   line-height: 1.8;
@@ -135,6 +137,7 @@ h1, h2, h3 {
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   margin-top: 20px;
 }
@@ -769,10 +772,27 @@ h1, h2, h3 {
   gap: 6px;
 }
 
-.copy-btn {
+.ai-panel-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.copy-btn,
+.stop-btn,
+.retry-btn {
   min-height: 30px !important;
   padding: 0 12px !important;
   font-size: 12px !important;
+}
+
+.stop-btn {
+  color: var(--danger) !important;
+  border-color: rgba(181, 52, 42, 0.2) !important;
+}
+
+.stop-btn:hover {
+  background: rgba(181, 52, 42, 0.06) !important;
+  border-color: var(--danger) !important;
 }
 
 /* Scrollable content area */
@@ -885,6 +905,17 @@ h1, h2, h3 {
 
 .ai-output p + p {
   margin-top: 10px;
+}
+
+.ai-hint {
+  margin-top: 16px !important;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--accent-light);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
 }
 
 .cursor {
@@ -1103,12 +1134,12 @@ h1, h2, h3 {
 
 .rpt-table th {
   text-align: left;
-  padding: 8px 12px;
-  font-size: 11px;
+  padding: 10px 14px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--ink-muted);
   letter-spacing: 0.04em;
-  background: rgba(47, 93, 80, 0.04);
+  background: rgba(47, 93, 80, 0.05);
   border-bottom: 1px solid var(--line);
 }
 
@@ -1119,7 +1150,7 @@ h1, h2, h3 {
 }
 
 .rpt-table td {
-  padding: 10px 12px;
+  padding: 11px 14px;
   border-bottom: 1px solid var(--line);
   color: var(--ink);
 }
